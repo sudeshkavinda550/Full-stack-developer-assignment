@@ -1,0 +1,136 @@
+<div class="purchase-bill-container">
+  <div class="header">
+    <h1>Purchase Bill Form</h1>
+    <button class="logout-btn" (click)="logout()">Logout</button>
+  </div>
+
+  <div class="form-container">
+    <!-- Item Input Section -->
+    <div class="card">
+      <h2>Add Item</h2>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Item*</label>
+          <select [(ngModel)]="selectedItem" class="form-control">
+            <option value="">Select an item</option>
+            <option *ngFor="let item of items" [value]="item">{{ item }}</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Standard Cost*</label>
+          <input type="number" [(ngModel)]="standardCost" class="form-control" />
+        </div>
+
+        <div class="form-group">
+          <label>Standard Price*</label>
+          <input type="number" [(ngModel)]="standardPrice" class="form-control" />
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Quantity*</label>
+          <input type="number" [(ngModel)]="quantity" class="form-control" min="1" />
+        </div>
+
+        <div class="form-group">
+          <label>Discount</label>
+          <input type="number" [(ngModel)]="discount" class="form-control" min="0" />
+        </div>
+
+        <div class="form-group">
+          <label>Total Cost</label>
+          <input type="number" [value]="calculateTotalCost()" class="form-control" readonly />
+        </div>
+
+        <div class="form-group">
+          <label>Total Selling</label>
+          <input type="number" [value]="calculateTotalSelling()" class="form-control" readonly />
+        </div>
+      </div>
+
+      <button class="btn-add" (click)="addItem()">Add Item</button>
+    </div>
+
+    <!-- Items Table -->
+    <div class="card" *ngIf="billItems.length > 0">
+      <h2>Purchase Bill Items</h2>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Std Cost</th>
+              <th>Std Price</th>
+              <th>Qty</th>
+              <th>Discount</th>
+              <th>Total Cost</th>
+              <th>Total Selling</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let item of billItems; let i = index">
+              <td>{{ item.Item }}</td>
+              <td>{{ item.StandardCost }}</td>
+              <td>{{ item.StandardPrice }}</td>
+              <td>{{ item.Quantity }}</td>
+              <td>{{ item.Discount }}</td>
+              <td>{{ item.TotalCost }}</td>
+              <td>{{ item.TotalSelling }}</td>
+              <td>
+                <button class="btn-remove" (click)="removeItem(i)">Remove</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Summary Section -->
+    <div class="card summary-card">
+      <h2>Item Summary</h2>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <label>Total Items:</label>
+          <span>{{ totalItems }}</span>
+        </div>
+        <div class="summary-item">
+          <label>Total Quantity:</label>
+          <span>{{ totalQuantity }}</span>
+        </div>
+        <div class="summary-item">
+          <label>Total Cost:</label>
+          <span>{{ getTotalCost() }}</span>
+        </div>
+        <div class="summary-item">
+          <label>Total Selling:</label>
+          <span>{{ getTotalSelling() }}</span>
+        </div>
+      </div>
+
+      <div class="form-group batch-dropdown">
+        <label>Batch Dropdown*</label>
+        <select [(ngModel)]="selectedBatch" class="form-control">
+          <option value="">Select location</option>
+          <option *ngFor="let loc of locations" 
+                  [value]="loc.Location_Code + ' - ' + loc.Location_Name">
+            {{ loc.Location_Name }}
+          </option>
+        </select>
+      </div>
+
+      <div class="success-message" *ngIf="successMessage">
+        {{ successMessage }}
+      </div>
+
+      <div class="error-message" *ngIf="errorMessage">
+        {{ errorMessage }}
+      </div>
+
+      <button class="btn-submit" (click)="submitBill()">Submit Purchase Bill</button>
+    </div>
+  </div>
+</div>
