@@ -1,96 +1,236 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
+using System.Text.Json;
 
-namespace Backend.Controllers
+[Route("api/[controller]")]
+[ApiController]
+public class ExternalApiController : ControllerBase
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class ExternalApiController : ControllerBase
+    private readonly AppDbContext _context;
+    private readonly IConfiguration _configuration;
+    private readonly ILogger<ExternalApiController> _logger;
+
+    public ExternalApiController(AppDbContext context, IConfiguration configuration, ILogger<ExternalApiController> logger)
     {
-        private readonly AppDbContext _context;
-        private readonly IConfiguration _configuration;
+        _context = context;
+        _configuration = configuration;
+        _logger = logger;
+    }
 
-        public ExternalApiController(AppDbContext context, IConfiguration configuration)
+    [HttpPost("POS_Api/Invoke")]
+    public async Task<IActionResult> Invoke([FromBody] PosApiRequest request)
+    {
+        try
         {
-            _context = context;
-            _configuration = configuration;
-        }
+            _logger.LogInformation($"Received request - API_Action: {request?.API_Action}");
 
-        [HttpPost("POS_Api/Invoke")]
-        public async Task<IActionResult> Invoke([FromBody] LoginRequest request)
-        {
-            if (request.API_Action != "GetLoginData")
+            if (request == null || string.IsNullOrEmpty(request.API_Action))
             {
-                return BadRequest(new { message = "Invalid API Action" });
+                return BadRequest(new { success = false, message = "Invalid request format" });
             }
 
-            // Validate credentials
-            var user = await _context.Users.FirstOrDefaultAsync(u => 
-                u.Username == request.API_Body.Username && 
-                u.Password == request.API_Body.Pw);
+            switch (request.API_Action)
+            {
+                case "GetLoginData":
+                    return await HandleLogin(request);
+
+                case "GetLocations":
+                    return await HandleGetLocations(request);
+
+                case "SavePurchaseBill":
+                    return await HandleSavePurchaseBill(request);
+
+                default:
+                    return BadRequest(new { success = false, message = $"Unknown API_Action: {request.API_Action}" });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Error in Invoke: {ex.Message}");
+            _logger.LogError($"Stack trace: {ex.StackTrace}");
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    private async Task<IActionResult> HandleLogin(PosApiRequest request)
+    {
+        try
+        {
+            var jsonElement = (JsonElement)request.API_Body;
+            var username = jsonElement.GetProperty("Username").GetString();
+            var password = jsonElement.GetProperty("Pw").GetString();
+
+            _logger.LogInformation($"Attempting login for: {username}");
+
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.Username == username && u.Password == password);
 
             if (user == null)
             {
-                return Unauthorized(new { message = "Invalid credentials" });
+                _logger.LogWarning($"Login failed for: {username}");
+                return Ok(new
+                {
+                    success = false,
+                    message = "Invalid username or password",
+                    data = (object)null
+                });
             }
 
-            // Get user locations
+            _logger.LogInformation($"Login successful for: {username}");
+
+            // Get user locations - UserLocation already has Location_Code and Location_Name
             var userLocations = await _context.UserLocations
                 .Where(ul => ul.UserId == user.Id)
-                .Select(ul => new { ul.Location_Code, ul.Location_Name })
+                .Select(ul => new
+                {
+                    Location_Code = ul.Location_Code,
+                    Location_Name = ul.Location_Name
+                })
                 .ToListAsync();
 
-            // Generate JWT token
-            var token = GenerateJwtToken(user);
+            // If no locations found, return all available locations
+            if (!userLocations.Any())
+            {
+                userLocations = await _context.LocationDetails
+                    .Select(ld => new
+                    {
+                        Location_Code = ld.Location_Code,
+                        Location_Name = ld.Location_Name
+                    }).ToListAsync();
+            }
+
+            // Generate a simple token
+            var token = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
 
             return Ok(new
             {
                 success = true,
+                message = "Login successful",
                 token = token,
-                user = new { user.Id, user.Username },
-                User_Locations = userLocations
+                user = new
+                {
+                    Id = user.Id,
+                    Username = user.Username
+                },
+                User_Locations = userLocations,
+                data = new
+                {
+                    userId = user.Id,
+                    username = user.Username,
+                    locations = userLocations
+                }
             });
         }
-
-        private string GenerateJwtToken(User user)
+        catch (Exception ex)
         {
-            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
-            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
-
-            var claims = new[]
-            {
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Email, user.Username)
-            };
-
-            var token = new JwtSecurityToken(
-                issuer: _configuration["Jwt:Issuer"],
-                audience: _configuration["Jwt:Audience"],
-                claims: claims,
-                expires: DateTime.Now.AddHours(24),
-                signingCredentials: credentials
-            );
-
-            return new JwtSecurityTokenHandler().WriteToken(token);
+            _logger.LogError($"Error in HandleLogin: {ex.Message}");
+            return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
 
-    public class LoginRequest
+    private async Task<IActionResult> HandleGetLocations(PosApiRequest request)
     {
-        public string API_Action { get; set; }
-        public string Device_Id { get; set; }
-        public string Sync_Time { get; set; }
-        public string Company_Code { get; set; }
-        public LoginBody API_Body { get; set; }
+        var locations = await _context.LocationDetails
+            .Select(l => new
+            {
+                Location_Code = l.Location_Code,
+                Location_Name = l.Location_Name
+            })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            success = true,
+            data = locations
+        });
     }
 
-    public class LoginBody
+    private async Task<IActionResult> HandleSavePurchaseBill(PosApiRequest request)
     {
-        public string Username { get; set; }
-        public string Pw { get; set; }
+        var jsonElement = (JsonElement)request.API_Body;
+        var billData = JsonSerializer.Deserialize<PurchaseBillData>(jsonElement.GetRawText());
+
+        // Calculate totals
+        var totalItems = billData.Items.Count;
+        var totalQuantity = billData.Items.Sum(i => i.Quantity);
+        var totalCost = billData.Items.Sum(i => i.TotalCost);
+        var totalSelling = billData.Items.Sum(i => i.TotalSelling);
+
+        // Create purchase bill
+        var purchaseBill = new PurchaseBill
+        {
+            UserId = billData.UserId,
+            BatchLocation = billData.BatchLocation,
+            CreatedDate = DateTime.Now,
+            TotalItems = totalItems,
+            TotalQuantity = totalQuantity,
+            TotalCost = totalCost,
+            TotalSelling = totalSelling,
+            Items = new List<PurchaseBillItem>()
+        };
+
+        _context.PurchaseBills.Add(purchaseBill);
+        await _context.SaveChangesAsync();
+
+        // Create purchase bill items
+        foreach (var item in billData.Items)
+        {
+            var billItem = new PurchaseBillItem
+            {
+                PurchaseBillId = purchaseBill.Id,
+                Item = item.Item,
+                StandardCost = item.StandardCost,
+                StandardPrice = item.StandardPrice,
+                Quantity = item.Quantity,
+                Discount = item.Discount,
+                TotalCost = item.TotalCost,
+                TotalSelling = item.TotalSelling
+            };
+
+            _context.PurchaseBillItems.Add(billItem);
+        }
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            success = true,
+            message = "Purchase bill saved successfully",
+            data = new
+            {
+                billId = purchaseBill.Id,
+                totalItems = purchaseBill.TotalItems,
+                totalCost = purchaseBill.TotalCost,
+                totalSelling = purchaseBill.TotalSelling
+            }
+        });
     }
+}
+
+// Request Models
+public class PosApiRequest
+{
+    public string API_Action { get; set; }
+    public string Device_Id { get; set; }
+    public string Sync_Time { get; set; }
+    public string Company_Code { get; set; }
+    public object API_Body { get; set; }
+}
+
+public class PurchaseBillData
+{
+    public int UserId { get; set; }
+    public string BatchLocation { get; set; }
+    public List<PurchaseBillItemData> Items { get; set; }
+}
+
+public class PurchaseBillItemData
+{
+    public string Item { get; set; }
+    public decimal StandardCost { get; set; }
+    public decimal StandardPrice { get; set; }
+    public int Quantity { get; set; }
+    public decimal Discount { get; set; }
+    public decimal TotalCost { get; set; }
+    public decimal TotalSelling { get; set; }
 }

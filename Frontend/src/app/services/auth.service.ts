@@ -1,57 +1,62 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable, BehaviorSubject } from 'rxjs';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
+
+export interface LoginRequest {
+  Username: string;
+  Pw: string;
+}
 
 export interface LoginResponse {
   success: boolean;
-  token: string;
-  user: {
+  message: string;
+  token?: string;
+  user?: {
     Id: number;
     Username: string;
   };
-  User_Locations: Array<{
-    Location_Code: string;
-    Location_Name: string;
-  }>;
+  User_Locations?: any[];
+  data?: any;
 }
 
 @Injectable({
   providedIn: 'root'
 })
 export class AuthService {
-  private apiUrl = 'https://cs.starline-api.azurewebsites.net/api/External_Api/POS_Api/Invoke';
-  private localApiUrl = 'http://localhost:5000/api/ExternalApi/POS_Api/Invoke';
-  
-  private currentUserSubject = new BehaviorSubject<any>(null);
-  public currentUser$ = this.currentUserSubject.asObservable();
+  private apiUrl = 'http://localhost:5000/api/ExternalApi/POS_Api/Invoke';
 
-  constructor(private http: HttpClient) {
-    const userData = localStorage.getItem('currentUser');
-    if (userData) {
-      this.currentUserSubject.next(JSON.parse(userData));
-    }
-  }
+  constructor(private http: HttpClient) { }
 
   login(username: string, password: string): Observable<LoginResponse> {
-    const loginData = {
-      "API_Action": "GetLoginData",
-      "Device_Id": "DD01",
-      "Sync_Time": "",
-      "Company_Code": "info@enhanzer.com",
-      "API_Body": {
-        "Username": username,
-        "Pw": password
+    const request = {
+      API_Action: 'GetLoginData',
+      Device_Id: 'web-client',
+      Sync_Time: new Date().toISOString(),
+      Company_Code: 'COMP001',
+      API_Body: {
+        Username: username,
+        Pw: password
       }
     };
 
-    return this.http.post<LoginResponse>(this.localApiUrl, loginData).pipe(
+    return this.http.post<LoginResponse>(this.apiUrl, request).pipe(
       tap(response => {
-        if (response.success) {
+        if (response.success && response.token) {
+          // Store authentication data
           localStorage.setItem('token', response.token);
-          localStorage.setItem('currentUser', JSON.stringify(response.user));
-          localStorage.setItem('userLocations', JSON.stringify(response.User_Locations));
-          this.currentUserSubject.next(response.user);
+          
+          // Handle user ID - check both response.user and response.data
+          const userId = response.user?.Id || response.data?.userId || 0;
+          localStorage.setItem('userId', userId.toString());
+          
+          // Handle username
+          const username = response.user?.Username || response.data?.username || '';
+          localStorage.setItem('username', username);
+          
+          // Handle locations
+          const locations = response.User_Locations || response.data?.locations || [];
+          localStorage.setItem('userLocations', JSON.stringify(locations));
         }
       })
     );
@@ -59,21 +64,26 @@ export class AuthService {
 
   logout(): void {
     localStorage.removeItem('token');
-    localStorage.removeItem('currentUser');
+    localStorage.removeItem('userId');
+    localStorage.removeItem('username');
     localStorage.removeItem('userLocations');
-    this.currentUserSubject.next(null);
-  }
-
-  getToken(): string | null {
-    return localStorage.getItem('token');
   }
 
   isAuthenticated(): boolean {
-    return !!this.getToken();
+    return !!localStorage.getItem('token');
   }
 
   getUserLocations(): any[] {
     const locations = localStorage.getItem('userLocations');
     return locations ? JSON.parse(locations) : [];
+  }
+
+  getUserId(): number {
+    const userId = localStorage.getItem('userId');
+    return userId ? parseInt(userId) : 0;
+  }
+
+  getUsername(): string {
+    return localStorage.getItem('username') || '';
   }
 }

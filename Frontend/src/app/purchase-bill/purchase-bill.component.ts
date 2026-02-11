@@ -34,22 +34,42 @@ export class PurchaseBillComponent implements OnInit {
   ) { }
 
   ngOnInit(): void {
+    console.log('PurchaseBillComponent initialized');
+    
     if (!this.authService.isAuthenticated()) {
+      console.log('User not authenticated, redirecting to login');
       this.router.navigate(['/login']);
       return;
     }
 
     this.userLocations = this.authService.getUserLocations();
+    console.log('User locations from auth:', this.userLocations);
+    
     this.loadLocationDetails();
   }
 
   loadLocationDetails(): void {
+    console.log('Loading location details from API...');
+    
     this.purchaseBillService.getLocationDetails().subscribe({
       next: (data) => {
+        console.log('Locations received from API:', data);
         this.locations = data;
+        
+        if (!data || data.length === 0) {
+          console.warn('No locations returned from API');
+          this.errorMessage = 'No locations available. Please contact administrator.';
+        }
       },
       error: (error) => {
         console.error('Error loading locations:', error);
+        this.errorMessage = 'Failed to load locations. Please try refreshing the page.';
+        
+        // Fallback to user locations if API fails
+        if (this.userLocations && this.userLocations.length > 0) {
+          console.log('Using user locations as fallback');
+          this.locations = this.userLocations;
+        }
       }
     });
   }
@@ -109,6 +129,10 @@ export class PurchaseBillComponent implements OnInit {
   }
 
   submitBill(): void {
+    console.log('Submit bill clicked');
+    console.log('Selected batch:', this.selectedBatch);
+    console.log('Bill items:', this.billItems);
+    
     if (this.billItems.length === 0) {
       this.errorMessage = 'Please add at least one item';
       return;
@@ -128,8 +152,11 @@ export class PurchaseBillComponent implements OnInit {
       TotalSelling: this.getTotalSelling()
     };
 
+    console.log('Submitting purchase bill:', purchaseBill);
+
     this.purchaseBillService.createPurchaseBill(purchaseBill).subscribe({
       next: (response) => {
+        console.log('Purchase bill created successfully:', response);
         this.successMessage = 'Purchase bill created successfully!';
         this.billItems = [];
         this.updateSummary();
@@ -141,8 +168,8 @@ export class PurchaseBillComponent implements OnInit {
         }, 3000);
       },
       error: (error) => {
+        console.error('Error creating purchase bill:', error);
         this.errorMessage = 'Error creating purchase bill. Please try again.';
-        console.error('Error:', error);
       }
     });
   }

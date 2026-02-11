@@ -115,11 +115,15 @@
         <label>Batch Dropdown*</label>
         <select [(ngModel)]="selectedBatch" class="form-control">
           <option value="">Select location</option>
-          <option *ngFor="let loc of locations" 
-                  [value]="loc.Location_Code + ' - ' + loc.Location_Name">
+          <option *ngFor="let loc of locations" [value]="loc.Location_Code">
             {{ loc.Location_Name }}
           </option>
         </select>
+        <!-- Debug info - remove after fixing -->
+        <small style="color: #999; margin-top: 5px;">
+          Locations loaded: {{ locations.length }} | 
+          User locations: {{ userLocations.length }}
+        </small>
       </div>
 
       <div class="success-message" *ngIf="successMessage">
